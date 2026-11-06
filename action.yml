@@ -1,0 +1,83 @@
+name: SSH Deploy with Rollback
+description: Copy a build to your server over SSH, restart it, check health, and roll back to the previous build if it does not come up.
+author: kimjungminn24
+branding:
+  icon: rotate-ccw
+  color: green
+
+inputs:
+  host:
+    description: Server address.
+    required: true
+  user:
+    description: SSH user.
+    required: true
+  key:
+    description: Private SSH key (store it in a secret).
+    required: true
+  port:
+    description: SSH port.
+    default: '22'
+  known-hosts:
+    description: >-
+      The server's line from known_hosts. Strongly recommended. When empty the host key is
+      fetched with ssh-keyscan on every run, which trusts whatever answers at that address.
+    default: ''
+  artifact:
+    description: Local file to deploy, for example build/libs/app.jar.
+    required: true
+  target:
+    description: Where the file lives on the server, for example /home/ubuntu/app/app.jar.
+    required: true
+  service:
+    description: systemd service to restart. Used to build the default restart and logs commands.
+    default: ''
+  restart:
+    description: Command that restarts the app on the server. Defaults to `sudo systemctl restart <service>`.
+    default: ''
+  logs:
+    description: Command whose output is shown when the health check fails. Defaults to `sudo journalctl -u <service> -n 80 --no-pager`.
+    default: ''
+  health-url:
+    description: URL checked from the server itself, for example http://localhost:8080/actuator/health.
+    required: true
+  health-expect:
+    description: Text the health response must contain, for example UP. Empty means any 2xx response passes.
+    default: ''
+  health-timeout:
+    description: Seconds to wait for the app to become healthy.
+    default: '60'
+  health-interval:
+    description: Seconds between health checks.
+    default: '2'
+  keep:
+    description: How many previous builds to keep on the server for rollback.
+    default: '1'
+
+outputs:
+  result:
+    description: deployed, rolled-back, rollback-failed or failed-no-backup.
+    value: ${{ steps.deploy.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      env:
+        IN_HOST: ${{ inputs.host }}
+        IN_USER: ${{ inputs.user }}
+        IN_KEY: ${{ inputs.key }}
+        IN_PORT: ${{ inputs.port }}
+        IN_KNOWN_HOSTS: ${{ inputs.known-hosts }}
+        IN_ARTIFACT: ${{ inputs.artifact }}
+        IN_TARGET: ${{ inputs.target }}
+        IN_SERVICE: ${{ inputs.service }}
+        IN_RESTART: ${{ inputs.restart }}
+        IN_LOGS: ${{ inputs.logs }}
+        IN_HEALTH_URL: ${{ inputs.health-url }}
+        IN_HEALTH_EXPECT: ${{ inputs.health-expect }}
+        IN_HEALTH_TIMEOUT: ${{ inputs.health-timeout }}
+        IN_HEALTH_INTERVAL: ${{ inputs.health-interval }}
+        IN_KEEP: ${{ inputs.keep }}
+      run: bash "${{ github.action_path }}/scripts/deploy.sh"
