@@ -25,7 +25,9 @@ Made for the common setup of one app on one server (EC2, a VPS, a home box) run 
 3. Swaps the new build in with a rename, which is a single step on the same disk.
 4. Restarts the app, by default with `sudo systemctl restart <service>`.
 5. Polls `health-url` from the server until it answers, or until `health-timeout` runs out.
-6. If the app never becomes healthy, it prints the last service logs, restores `target.prev`, restarts again and fails the job. You find out from a red check, not from your users.
+6. If the app never becomes healthy, it prints the last service logs, puts the previous build back, restarts again and fails the job. You find out from a red check, not from your users. The failed build is left at `target.failed` so you can look at it.
+
+Only a backup made in the same run is used for a rollback, so an old `app.jar.prev` lying around is never restored by mistake. After a rollback the backups are exactly as they were before the run.
 
 The health check runs on the server, so `localhost` URLs work and the port does not need to be open to the internet.
 
@@ -59,6 +61,7 @@ The health check runs on the server, so `localhost` URLs work and the port does 
 | `rolled-back` | The new build failed; the previous one is running again | fails |
 | `rollback-failed` | The previous build did not come up either | fails |
 | `failed-no-backup` | The new build failed and there was nothing to roll back to | fails |
+| `error` | The deploy could not run: bad input, SSH failure, missing `curl` on the server | fails |
 
 ## Setting up the server
 
@@ -92,6 +95,20 @@ ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart my-app, /usr/bin/journalc
 ```
 
 **`curl`** must be installed on the server. It is on most images.
+
+## Running one deploy at a time
+
+Two deploys to the same server at once would restart the app under each other. Add a concurrency group to the job:
+
+```yaml
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+```
+
+## A custom restart command
+
+`restart` can be any command, but it must stop the old process before it returns. Otherwise the health check can get an answer from the old build and report a broken deploy as healthy. `systemctl restart` already works this way.
 
 ## known-hosts
 

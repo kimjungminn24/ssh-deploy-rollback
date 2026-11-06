@@ -56,7 +56,7 @@ inputs:
 
 outputs:
   result:
-    description: deployed, rolled-back, rollback-failed or failed-no-backup.
+    description: deployed, rolled-back, rollback-failed, failed-no-backup or error.
     value: ${{ steps.deploy.outputs.result }}
 
 runs:

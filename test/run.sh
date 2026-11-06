@@ -47,7 +47,7 @@ for _ in $(seq 40); do
 done
 [ -n "$known" ] || { echo "sshd did not start"; exit 1; }
 
-srv="$work/server"
+srv="$work/server dir's"
 mkdir -p "$srv"
 target="$srv/app.jar"
 python3 "$root/test/fake-app.py" "$target" $app_port &
@@ -64,7 +64,7 @@ deploy() { # content, keep -> sets $out and $code
     IN_HOST=127.0.0.1 IN_USER="$(id -un)" IN_KEY="$(cat "$work/client_key")" IN_PORT=$port \
     IN_KNOWN_HOSTS="$known" \
     IN_ARTIFACT="$work/artifact.jar" IN_TARGET="$target" IN_SERVICE='' \
-    IN_RESTART="echo restarted >> $srv/restarts" IN_LOGS="echo app log line" \
+    IN_RESTART="echo restarted >> $(printf '%q' "$srv/restarts")" IN_LOGS="echo app log line" \
     IN_HEALTH_URL="http://127.0.0.1:$app_port/health" IN_HEALTH_EXPECT=UP \
     IN_HEALTH_TIMEOUT=3 IN_HEALTH_INTERVAL=1 IN_KEEP="${2:-1}" \
     GITHUB_OUTPUT="$work/output" bash "$root/scripts/deploy.sh" 2>&1
@@ -85,7 +85,7 @@ echo "second deploy"
 deploy "ok v2"
 check "succeeds" '[ "$result" = deployed ]'
 check "previous build kept" 'grep -q "ok v1" "$target.prev"'
-check "upload file cleaned up" '[ ! -f "$target.new" ]'
+check "no upload files left" '! ls "$target".new* >/dev/null 2>&1'
 
 echo "broken build rolls back"
 deploy "broken v3"
@@ -93,21 +93,48 @@ check "step fails" '[ $code != 0 ]'
 check "reports rolled-back" '[ "$result" = rolled-back ]'
 check "previous build restored" 'grep -q "ok v2" "$target"'
 check "logs shown" 'grep -q "app log line" <<<"$out"'
+check "failed build kept for a look" 'grep -q "broken v3" "$target.failed"'
+check "backup chain put back" 'grep -q "ok v1" "$target.prev"'
 
 echo "keep=2 keeps two backups"
 deploy "ok v4" 2
 deploy "ok v5" 2
 check "newest backup" 'grep -q "ok v4" "$target.prev"'
 check "older backup" 'grep -q "ok v2" "$target.prev.2"'
+check "no third backup left over" '[ ! -f "$target.prev.3" ]'
 
-echo "broken build with no backup"
-rm -f "$target" "$target".prev*
+echo "a stale backup is never used"
+printf 'ok stale\n' > "$target.prev"
 deploy "broken v6" 0
+check "fails instead of restoring a stale build" '[ "$result" = failed-no-backup ]'
+check "stale build not restored" 'grep -q "broken v6" "$target"'
+
+echo "first deploy that fails"
+rm -f "$target" "$target".prev* "$target.failed"
+deploy "broken v7"
 check "fails without a backup" '[ $code != 0 ] && [ "$result" = failed-no-backup ]'
 
 echo "bad input"
-set +e; IN_ARTIFACT=/nope IN_KEEP=1 IN_HEALTH_TIMEOUT=1 IN_HEALTH_INTERVAL=1 bash "$root/scripts/deploy.sh" >/dev/null 2>&1; c=$?; set -e
-check "missing artifact is an error" '[ $c != 0 ]'
+for bad in "IN_HEALTH_INTERVAL=0" "IN_HEALTH_TIMEOUT=0" "IN_PORT=abc" "IN_ARTIFACT=/nope"; do
+  set +e
+  env IN_ARTIFACT="$work/artifact.jar" IN_KEEP=1 IN_PORT=22 IN_HEALTH_TIMEOUT=1 IN_HEALTH_INTERVAL=1 IN_TARGET=x \
+    IN_SERVICE=s IN_RESTART= IN_LOGS= IN_KEY=k IN_KNOWN_HOSTS=k IN_HOST=h IN_USER=u IN_HEALTH_URL=u IN_HEALTH_EXPECT= \
+    "$bad" bash "$root/scripts/deploy.sh" >/dev/null 2>&1
+  c=$?
+  set -e
+  check "$bad is rejected" '[ $c != 0 ]'
+done
+
+echo "server that cannot be reached"
+printf 'ok v8\n' > "$work/artifact.jar"; : > "$work/output"
+set +e
+IN_HOST=127.0.0.1 IN_USER="$(id -un)" IN_KEY="$(cat "$work/client_key")" IN_PORT=1 IN_KNOWN_HOSTS="$known" \
+  IN_ARTIFACT="$work/artifact.jar" IN_TARGET="$target" IN_SERVICE=s IN_RESTART= IN_LOGS= \
+  IN_HEALTH_URL=u IN_HEALTH_EXPECT= IN_HEALTH_TIMEOUT=1 IN_HEALTH_INTERVAL=1 IN_KEEP=1 \
+  GITHUB_OUTPUT="$work/output" bash "$root/scripts/deploy.sh" >/dev/null 2>&1
+c=$?
+set -e
+check "fails with result error" '[ $c != 0 ] && grep -q "result=error" "$work/output"'
 
 echo "restart ran $(wc -l < "$srv/restarts") times"
 echo "$pass passed, $fail failed"
