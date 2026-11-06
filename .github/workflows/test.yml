@@ -34,12 +34,12 @@ jobs:
           printf '%s\n' "Port 2222" "ListenAddress 127.0.0.1" "HostKey $w/host_key" \
             "AuthorizedKeysFile $w/authorized_keys" "PasswordAuthentication no" "StrictModes no" "UsePAM no" > "$w/sshd_config"
           sudo mkdir -p /run/sshd && sudo /usr/sbin/sshd -f "$w/sshd_config"
-          sleep 1
+          for _ in $(seq 40); do ssh-keyscan -p 2222 127.0.0.1 2>/dev/null | grep -qv '^#' && break; sleep 0.25; done
           python3 test/fake-app.py "$w/app/app.jar" 18080 &
           {
             echo "SRV=$w"
             echo 'KEY<<EOF'; cat "$w/client_key"; echo EOF
-            echo "KNOWN=$(ssh-keyscan -p 2222 127.0.0.1 2>/dev/null | head -n 1)"
+            echo 'KNOWN<<EOF'; ssh-keyscan -p 2222 127.0.0.1 2>/dev/null | grep -v '^#'; echo EOF
           } >> "$GITHUB_ENV"
 
       - run: echo "ok v1" > good.jar

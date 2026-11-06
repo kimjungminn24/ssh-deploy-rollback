@@ -32,8 +32,15 @@ StrictModes no
 UsePAM no
 CFG
 sudo_ mkdir -p /run/sshd
-sudo_ "$(command -v sshd)" -f "$work/sshd_config"
-for _ in $(seq 20); do ssh-keyscan -p $port 127.0.0.1 >/dev/null 2>&1 && break; sleep 0.25; done
+sshd_bin="$(command -v sshd || echo /usr/sbin/sshd)"
+sudo_ "$sshd_bin" -f "$work/sshd_config"
+known=""
+for _ in $(seq 40); do
+  known="$(ssh-keyscan -p $port 127.0.0.1 2>/dev/null | grep -v '^#' || true)"
+  [ -n "$known" ] && break
+  sleep 0.25
+done
+[ -n "$known" ] || { echo "sshd did not start"; exit 1; }
 
 srv="$work/server"
 mkdir -p "$srv"
@@ -50,7 +57,7 @@ deploy() { # content, keep -> sets $out and $code
   set +e
   out=$(
     IN_HOST=127.0.0.1 IN_USER="$(id -un)" IN_KEY="$(cat "$work/client_key")" IN_PORT=$port \
-    IN_KNOWN_HOSTS="$(ssh-keyscan -p $port 127.0.0.1 2>/dev/null)" \
+    IN_KNOWN_HOSTS="$known" \
     IN_ARTIFACT="$work/artifact.jar" IN_TARGET="$target" IN_SERVICE='' \
     IN_RESTART="echo restarted >> $srv/restarts" IN_LOGS="echo app log line" \
     IN_HEALTH_URL="http://127.0.0.1:$app_port/health" IN_HEALTH_EXPECT=UP \
