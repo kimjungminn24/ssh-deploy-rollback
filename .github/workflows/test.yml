@@ -27,6 +27,7 @@ jobs:
       - name: Start a throwaway sshd and a fake app
         run: |
           sudo apt-get install -y -q openssh-server
+          sudo usermod -p '*' runner   # the runner account is locked, which blocks key login without PAM
           w="$RUNNER_TEMP/srv"; mkdir -p "$w/app"
           ssh-keygen -q -t ed25519 -N '' -f "$w/host_key"
           ssh-keygen -q -t ed25519 -N '' -f "$w/client_key"

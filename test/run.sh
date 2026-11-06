@@ -32,6 +32,11 @@ StrictModes no
 UsePAM no
 CFG
 sudo_ mkdir -p /run/sshd
+# GitHub runners lock the runner account's password, and sshd without PAM then refuses
+# even key logins. Swap the lock for "no password" so key login works in CI.
+if [ "${GITHUB_ACTIONS:-}" = true ] && [ "$(id -u)" != 0 ]; then
+  sudo usermod -p '*' "$(id -un)"
+fi
 sshd_bin="$(command -v sshd || echo /usr/sbin/sshd)"
 sudo_ "$sshd_bin" -f "$work/sshd_config"
 known=""
